@@ -1,11 +1,13 @@
 """Datos: carga de Fashion-MNIST y reparto entre clientes.
 
-Un *particionado* (``Partition``) es una lista con un array de índices por cliente:
-``partition[i]`` son las posiciones del conjunto de entrenamiento que tiene el cliente ``i``.
-Todo particionado debe repartir cada índice a exactamente un cliente (sin huecos ni solapes).
+Un *particionado* (``Partition``) es una lista con un array de índices por
+cliente: ``partition[i]`` son las posiciones del conjunto de entrenamiento que
+tiene el cliente ``i``. Todo particionado debe repartir cada índice a
+exactamente un cliente (sin huecos ni solapes).
 """
 
 from __future__ import annotations
+import random
 
 import numpy as np
 from matplotlib.figure import Figure
@@ -14,10 +16,10 @@ from torchvision import datasets
 
 from fl.utils import Config
 
+
 Partition = list[np.ndarray]
 
 FMNIST_MEAN, FMNIST_STD = 0.2860, 0.3530
-
 
 # ---------------------------------------------------------------------------
 # Carga (DADO)
@@ -25,18 +27,25 @@ FMNIST_MEAN, FMNIST_STD = 0.2860, 0.3530
 def load_dataset(name: str, root: str) -> tuple[TensorDataset, TensorDataset]:
     """Descarga (la primera vez) el dataset y lo carga entero en memoria.
 
-    Devuelve ``(train, test)``. Cada ejemplo es un par ``(x, y)``: ``x`` es una imagen
-    normalizada de forma ``(1, 28, 28)`` e ``y`` su clase (0-9).
+    Devuelve ``(train, test)``. Cada ejemplo es un par ``(x, y)``: ``x`` es
+    una imagen normalizada de forma ``(1, 28, 28)`` e ``y`` su clase (0-9).
     Las etiquetas de todo el conjunto están en ``train.tensors[1]``.
     """
     if name != "fmnist":
         raise ValueError(f"Dataset desconocido: {name!r}")
-    splits = (datasets.FashionMNIST(root, train=train, download=True) for train in (True, False))
+    splits = (datasets.FashionMNIST(root, train=train, download=True)
+              for train in (True, False))
     return tuple(_to_tensors(split) for split in splits)
 
 
 def _to_tensors(split: datasets.FashionMNIST) -> TensorDataset:
-    x = split.data.unsqueeze(1).float().div(255).sub(FMNIST_MEAN).div(FMNIST_STD)
+    x = (
+        split.data.
+            unsqueeze(1).
+            float().
+            div(255).
+            sub(FMNIST_MEAN).div(FMNIST_STD)
+    )
     return TensorDataset(x, split.targets.long())
 
 
@@ -44,18 +53,23 @@ def _to_tensors(split: datasets.FashionMNIST) -> TensorDataset:
 # Particionado
 # ---------------------------------------------------------------------------
 def make_partition(labels: np.ndarray, cfg: Config, seed: int) -> Partition:
-    """Elige la estrategia de reparto según ``cfg.type`` (sección ``partition`` de la config)."""
+    """
+    Elige la estrategia de reparto según ``cfg.type``
+    (sección ``partition`` de la config).
+    """
     if cfg.type == "iid":
         return iid(labels, cfg.n_clients, seed)
     if cfg.type == "dirichlet":
         return dirichlet(labels, cfg.n_clients, cfg.alpha, seed)
     if cfg.type == "shards":
-        return dirichlet_shards(labels, cfg.n_clients, cfg.classes_per_client, cfg.alpha, seed)
+        return dirichlet_shards(labels, cfg.n_clients,
+                                cfg.classes_per_client, cfg.alpha, seed)
     raise ValueError(f"Particionado desconocido: {cfg.type!r}")
 
 
 def split_by_proportions(indices: np.ndarray, proportions: np.ndarray) -> list[np.ndarray]:
-    """(DADO) Divide ``indices`` en ``len(proportions)`` trozos consecutivos de tamaño ≈ proporcional.
+    """(DADO) Divide ``indices`` en ``len(proportions)`` trozos consecutivos
+    de tamaño ≈ proporcional.
 
     >>> split_by_proportions(np.arange(10), np.array([0.5, 0.3, 0.2]))
     [array([0, 1, 2, 3, 4]), array([5, 6, 7]), array([8, 9])]
@@ -75,7 +89,25 @@ def iid(labels: np.ndarray, n_clients: int, seed: int) -> Partition:
     """
     # TODO: baraja los índices 0..N-1 con un generador propio (np.random.default_rng(seed))
     #       y divídelos en n_clients trozos.
-    raise NotImplementedError("TODO: reparto IID")
+    N = len(labels)
+    rng = np.random.default_rng(seed)
+    indices = np.arange(N)
+    # Realiza una permutación uniformemente aleatoria lo que aumenta la
+    # probabilidad de obtener particiones IID.
+    rng.shuffle(indices)
+
+    # Distribución equitativa
+    ratio, rest = N // n_clients, N % n_clients
+
+    start = 0
+    partitions = []
+    # Recorrer el array de índices para repartir las particiones entre los clientes
+    for i in range(n_clients):
+        end = start + ratio + (i < rest)
+        partitions.append(indices[start:end])
+        start = end
+
+    return partitions
 
 
 def dirichlet(labels: np.ndarray, n_clients: int, alpha: float, seed: int, min_size: int = 10) -> Partition:
@@ -88,7 +120,30 @@ def dirichlet(labels: np.ndarray, n_clients: int, alpha: float, seed: int, min_s
     """
     # TODO: para cada clase, baraja sus índices, muestrea las proporciones con rng.dirichlet
     #       y repártelos con split_by_proportions. Comprueba min_size al final.
-    raise NotImplementedError("TODO: reparto Dirichlet(alpha)")
+    N = len(labels)
+    indexes = np.arange(N)
+    repeat = True
+    rng = np.random.default_rng(seed)
+
+    while repeat:
+
+        partitions = [np.array([], dtype=int) for _ in range(n_clients)]
+        for clase in np.unique(labels):
+            # Obtener los índices pertenecientes a la clase
+            class_indexs = indexes[labels == clase]
+            rng.shuffle(class_indexs) # Barajar los índices
+
+            # Muestrear las proporciones
+            props = rng.dirichlet([alpha for _ in range(n_clients)])
+
+            class_partitions = split_by_proportions(indices=class_indexs, proportions=props)
+            for i, split in enumerate(class_partitions):
+                partitions[i] = np.concatenate((partitions[i], split))
+
+        # Revisar que ningún cliente quedé con menos de `min_size` elementos
+        repeat = any([len(p) < min_size for p in partitions])
+
+    return partitions
 
 
 def dirichlet_shards(labels: np.ndarray, n_clients: int, classes_per_client: int, alpha: float, seed: int) -> Partition:
@@ -101,7 +156,38 @@ def dirichlet_shards(labels: np.ndarray, n_clients: int, classes_per_client: int
     """
     # TODO: decide qué clases tiene cada cliente, muestrea sus pesos con rng.dirichlet y reparte
     #       cada clase entre sus dueños (split_by_proportions). Ningún ejemplo debe quedar fuera.
-    raise NotImplementedError("TODO: reparto por clases (shards) con pesos Dirichlet")
+    clases = np.unique(labels)
+    indexes = np.arange( len(labels) )
+
+    # Tantos como k * n_clients.
+    rng = np.random.default_rng(seed)
+    slots = list(clases) # Se debe garantizar primero que todas las clases son cubiertas
+    remaning_slots = n_clients * classes_per_client - len(clases)
+    slots += list( rng.choice(clases, remaning_slots, replace=True) )
+    rng.shuffle(slots)
+
+    # Asignación
+    map_class_clients = {c: [] for c in clases} # {class_1: [client_0, client_1]}
+    cliente = 0
+    for start in range(0, len(slots), classes_per_client):
+        cls = slots[start: start + classes_per_client]
+        for c in cls:
+            map_class_clients[c].append(cliente)
+        cliente += 1
+
+    # Distribuir los ejemplos de las clases sobre los clientes
+    partitions = [np.array([], dtype=int) for _ in range(n_clients)]
+
+    for c in clases:
+        clientes = map_class_clients[c]
+        class_indexs = indexes[labels == c]
+        props = rng.dirichlet([alpha for _ in range(len(clientes))])
+
+        class_partitions = split_by_proportions(indices=class_indexs, proportions=props)
+        for i, cl in enumerate(clientes):
+            partitions[cl] = np.concatenate((partitions[cl], class_partitions[i]))
+
+    return partitions
 
 
 def plot_partition(labels: np.ndarray, partition: Partition, path) -> None:
