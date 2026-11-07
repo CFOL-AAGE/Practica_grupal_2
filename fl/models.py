@@ -27,19 +27,36 @@ class MLP(nn.Sequential):
     """
 
     def __init__(self, hidden: int = 200, n_classes: int = 10):
-        raise NotImplementedError("TODO: define las capas del MLP")
+        super().__init__(
+            nn.Flatten(),                      # (B, 1, 28, 28) -> (B, 784)
+            nn.Linear(28 * 28, hidden),
+            nn.ReLU(),
+            nn.Linear(hidden, hidden),
+            nn.ReLU(),
+            nn.Linear(hidden, n_classes),      # logits
+        )
 
 
 class CNN(nn.Sequential):
     """Red convolucional para imágenes ``(1, 28, 28)`` con como mucho ``CNN_MAX_PARAMS`` parámetros.
 
-    El diseño es libre. Si necesitáis algo que no sea una pila de capas, heredad de ``nn.Module``
-    y definid ``forward``.
+    CNN de FedAvg (McMahan et al., 2017) sin su capa densa de 512 unidades: dos bloques
+    conv 5x5-ReLU-maxpool (28 -> 14 -> 7) y una capa lineal. 83.466 parámetros.
+    Sin BatchNorm, dropout ni global average pooling: con datos no-IID empeoran FedAvg.
+    Justificación completa en decisiones/01-arquitectura-cnn.md.
     """
 
     def __init__(self, n_classes: int = 10):
-        # TODO: comprueba el tamaño con count_params(CNN()).
-        raise NotImplementedError("TODO: define las capas de la CNN (≤ CNN_MAX_PARAMS parámetros)")
+        super().__init__(
+            nn.Conv2d(1, 32, kernel_size=5, padding=2),   # 832 params,    (B, 32, 28, 28)
+            nn.ReLU(),
+            nn.MaxPool2d(2),                              #                (B, 32, 14, 14)
+            nn.Conv2d(32, 64, kernel_size=5, padding=2),  # 51.264 params, (B, 64, 14, 14)
+            nn.ReLU(),
+            nn.MaxPool2d(2),                              #                (B, 64, 7, 7)
+            nn.Flatten(),                                 #                (B, 3136)
+            nn.Linear(64 * 7 * 7, n_classes),             # 31.370 params -> logits
+        )
 
 
 def build_model(cfg: Config) -> nn.Module:
