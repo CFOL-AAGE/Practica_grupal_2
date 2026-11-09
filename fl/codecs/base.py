@@ -2,12 +2,21 @@
 
 from __future__ import annotations
 
+import torch
+
 from fl.models import StateDict
 
 
 def state_dict_nbytes(state_dict: StateDict) -> int:
     """Bytes que ocupan todos los tensores de ``state_dict``."""
-    raise NotImplementedError("TODO: tamaño en bytes de un state_dict")
+    total_size = 0
+
+    for tensor in state_dict.values():
+        # Tomar el tamaño en bytes de un elemento en el tensor y multiplicarlo
+        # por el número de elementos del mismo.
+        total_size += tensor.element_size() * tensor.numel()
+
+    return total_size
 
 
 class Codec:
