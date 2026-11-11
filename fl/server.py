@@ -24,9 +24,10 @@ def sample_clients(n_clients: int, fraction: float, rng: np.random.Generator) ->
 
     Devuelve sus identificadores (0..n_clients-1) ordenados de menor a mayor.
     """
-    # TODO: usa rng (no np.random) para que el muestreo sea reproducible.
-    raise NotImplementedError("TODO: muestreo de clientes")
-
+    # min(): con fraction > 1 no se pueden elegir más clientes de los que hay.
+    n_selected = min(n_clients, max(1, round(fraction * n_clients)))
+    selected = rng.choice(n_clients, size=n_selected, replace=False)
+    return sorted(int(cid) for cid in selected)  # int de Python, no np.int64
 
 class Server:
     """Orquesta el entrenamiento federado: ``run`` (dado) repite ``run_round`` (vuestro)."""
@@ -64,6 +65,7 @@ class Server:
                 logger.log(row)
         return history
 
+
     def run_round(self) -> dict:
         """Una ronda de FL: el servidor elige clientes, estos entrenan a partir del modelo global y
         envían su actualización (a través de ``self.codec``), el servidor las agrega y evalúa el
@@ -73,8 +75,32 @@ class Server:
         clientes) y los bytes enviados en la ronda: ``bytes_up`` (clientes -> servidor) y
         ``bytes_down`` (servidor -> clientes).
         """
-        raise NotImplementedError("TODO: una ronda de aprendizaje federado")
+        # 1. El servidor elige los clientes de esta ronda.
+        selected = sample_clients(len(self.clients), self.fraction, self.rng)
 
+        # 2. Copia del modelo global: es la referencia que conocen cliente y servidor (codec).
+        global_state = {k: v.detach().clone() for k, v in self.model.state_dict().items()}
+
+        # 3. Cada cliente entrena y sube su modelo codificado; el servidor lo decodifica.
+        updates, bytes_up = [], 0
+        for cid in selected:
+            update = self.clients[cid].local_train(self.model)
+            payload = self.codec.encode(update.state_dict, global_state)
+            bytes_up += state_dict_nbytes(payload)
+            update.state_dict = self.codec.decode(payload, global_state)
+            updates.append(update)
+
+        # 4. Agregación y evaluación del nuevo modelo global.
+        self.model.load_state_dict(self.aggregator.aggregate(updates))
+        metrics = evaluate(self.model, self.test_set, self.device)
+
+        return {
+            "test_acc": metrics["acc"],
+            "test_loss": metrics["loss"],
+            "train_loss": sum(u.metrics["train_loss"] for u in updates) / len(updates),
+            "bytes_up": bytes_up,
+            "bytes_down": len(selected) * state_dict_nbytes(global_state),  # el global baja a cada uno
+        }
 
 class LocalOnly(Server):
     """Referencia «suelo»: cada cliente entrena solo con sus datos y nunca se comunica.
@@ -88,6 +114,21 @@ class LocalOnly(Server):
         self.local_models = [copy.deepcopy(self.model) for _ in self.clients]
 
     def run_round(self) -> dict:
-        # TODO (ligero): entrena cada modelo local con su cliente, cárgale los pesos resultantes y
-        #                evalúalo. No hay comunicación: los bytes son 0.
-        raise NotImplementedError("TODO: ronda sin comunicación")
+        # Cada cliente entrena SU modelo (el que conserva entre rondas) solo con sus datos.
+        accs, losses, train_losses = [], [], []
+        for client, local_model in zip(self.clients, self.local_models):
+            update = client.local_train(local_model)
+            local_model.load_state_dict(update.state_dict)  # local_train trabaja sobre una copia
+            metrics = evaluate(local_model, self.test_set, self.device)
+            accs.append(metrics["acc"])
+            losses.append(metrics["loss"])
+            train_losses.append(update.metrics["train_loss"])
+
+        n = len(self.clients)
+        return {
+            "test_acc": sum(accs) / n,           # media de los modelos locales sobre el test global
+            "test_loss": sum(losses) / n,
+            "train_loss": sum(train_losses) / n,
+            "bytes_up": 0,                       # sin comunicación
+            "bytes_down": 0,
+        }
