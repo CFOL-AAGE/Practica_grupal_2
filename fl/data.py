@@ -154,40 +154,83 @@ def dirichlet_shards(labels: np.ndarray, n_clients: int, classes_per_client: int
     2. Dentro de cada cliente, el peso de cada una de sus k clases sigue ``Dir(alpha)``.
     3. Los ejemplos de cada clase se reparten entre sus dueños en proporción a esos pesos.
     """
-    # TODO: decide qué clases tiene cada cliente, muestrea sus pesos con rng.dirichlet y reparte
-    #       cada clase entre sus dueños (split_by_proportions). Ningún ejemplo debe quedar fuera.
-    clases = np.unique(labels)
-    indexes = np.arange( len(labels) )
-
-    # Tantos como k * n_clients.
+    classes = np.unique(labels)
+    n_classes, k = len(classes), classes_per_client
+    if not 1 <= k <= n_classes:
+        raise ValueError(f"classes_per_client debe estar entre 1 y {n_classes}, no {k}")
+    if n_clients * k < n_classes:
+        raise ValueError(
+            f"Con {n_clients} clientes y {k} clases por cliente no se cubren las {n_classes} clases "
+            f"(hace falta n_clients * k >= {n_classes})"
+        )
     rng = np.random.default_rng(seed)
-    slots = list(clases) # Se debe garantizar primero que todas las clases son cubiertas
-    remaning_slots = n_clients * classes_per_client - len(clases)
-    slots += list( rng.choice(clases, remaning_slots, replace=True) )
-    rng.shuffle(slots)
 
-    # Asignación
-    map_class_clients = {c: [] for c in clases} # {class_1: [client_0, client_1]}
-    cliente = 0
-    for start in range(0, len(slots), classes_per_client):
-        cls = slots[start: start + classes_per_client]
-        for c in cls:
-            map_class_clients[c].append(cliente)
-        cliente += 1
+    # 1. Clases de cada cliente: k posiciones consecutivas de una permutación recorrida en círculo.
+    #    Son distintas dentro de cada cliente (k <= n_clases), todas las clases tienen dueño
+    #    (n_clients * k >= n_clases) y cada clase tiene el mismo nº de dueños (±1).
+    perm = rng.permutation(classes)
+    client_classes = [perm[(i * k + np.arange(k)) % n_classes] for i in range(n_clients)]
 
-    # Distribuir los ejemplos de las clases sobre los clientes
-    partitions = [np.array([], dtype=int) for _ in range(n_clients)]
+    # 2. Peso de cada una de sus k clases dentro de cada cliente: w_i ~ Dir(alpha, ..., alpha).
+    weights = np.nan_to_num(rng.dirichlet(np.full(k, alpha), size=n_clients))
+    weights[weights.sum(axis=1) == 0] = 1.0 / k  # guarda: con alpha muy pequeño puede salir 0/0
 
-    for c in clases:
-        clientes = map_class_clients[c]
-        class_indexs = indexes[labels == c]
-        props = rng.dirichlet([alpha for _ in range(len(clientes))])
+    # 3. Cada clase se reparte entre sus dueños en proporción a sus pesos para esa clase.
+    #    Cada cliente tiene al menos una clase con peso >= 1/k, así que nunca queda vacío.
+    chunks = [[] for _ in range(n_clients)]
+    for c in classes:
+        owners = [i for i in range(n_clients) if c in client_classes[i]]
+        w = np.array([weights[i][np.flatnonzero(client_classes[i] == c)[0]] for i in owners])
+        if w.sum() == 0:
+            w = np.ones(len(owners))
+        class_indices = rng.permutation(np.flatnonzero(labels == c))
+        for i, part in zip(owners, split_by_proportions(class_indices, w)):
+            chunks[i].append(part)
 
-        class_partitions = split_by_proportions(indices=class_indexs, proportions=props)
-        for i, cl in enumerate(clientes):
-            partitions[cl] = np.concatenate((partitions[cl], class_partitions[i]))
+    return [np.concatenate(parts) for parts in chunks]
 
-    return partitions
+# def dirichlet_shards(labels: np.ndarray, n_clients: int, classes_per_client: int, alpha: float, seed: int) -> Partition:
+#     """Reparto por clases: cada cliente tiene solo ``classes_per_client`` clases (k).
+
+#     1. Se asignan k clases distintas a cada cliente, de modo que todas las clases tengan dueño
+#        (hace falta ``n_clients * k >= n_clases``).
+#     2. Dentro de cada cliente, el peso de cada una de sus k clases sigue ``Dir(alpha)``.
+#     3. Los ejemplos de cada clase se reparten entre sus dueños en proporción a esos pesos.
+#     """
+#     # TODO: decide qué clases tiene cada cliente, muestrea sus pesos con rng.dirichlet y reparte
+#     #       cada clase entre sus dueños (split_by_proportions). Ningún ejemplo debe quedar fuera.
+#     clases = np.unique(labels)
+#     indexes = np.arange( len(labels) )
+
+#     # Tantos como k * n_clients.
+#     rng = np.random.default_rng(seed)
+#     slots = list(clases) # Se debe garantizar primero que todas las clases son cubiertas
+#     remaning_slots = n_clients * classes_per_client - len(clases)
+#     slots += list( rng.choice(clases, remaning_slots, replace=True) )
+#     rng.shuffle(slots)
+
+#     # Asignación
+#     map_class_clients = {c: [] for c in clases} # {class_1: [client_0, client_1]}
+#     cliente = 0
+#     for start in range(0, len(slots), classes_per_client):
+#         cls = slots[start: start + classes_per_client]
+#         for c in cls:
+#             map_class_clients[c].append(cliente)
+#         cliente += 1
+
+#     # Distribuir los ejemplos de las clases sobre los clientes
+#     partitions = [np.array([], dtype=int) for _ in range(n_clients)]
+
+#     for c in clases:
+#         clientes = map_class_clients[c]
+#         class_indexs = indexes[labels == c]
+#         props = rng.dirichlet([alpha for _ in range(len(clientes))])
+
+#         class_partitions = split_by_proportions(indices=class_indexs, proportions=props)
+#         for i, cl in enumerate(clientes):
+#             partitions[cl] = np.concatenate((partitions[cl], class_partitions[i]))
+
+#     return partitions
 
 
 def plot_partition(labels: np.ndarray, partition: Partition, path) -> None:
