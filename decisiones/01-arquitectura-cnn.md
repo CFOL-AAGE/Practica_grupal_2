@@ -173,8 +173,11 @@ float32):
 Comparar A, B y A + GroupNorm en IID y en Dirichlet α=0,1, con las semillas 0, 1 y 2: **18
 ejecuciones**. Las de la candidata que quede se reutilizan en la pregunta 6.
 
-- Las variantes B y A + GroupNorm se prueban en una rama aparte. La clase `CNN` final conserva su
-  firma `CNN(n_classes=10)`, que usan los tests y `build_model`.
+- Las variantes están registradas en `build_model` como `cnn3x3` (B) y `cnn_gn` (A + GroupNorm, con
+  8 grupos), siguiendo la convención del repositorio para métodos nuevos. La clase `CNN` no cambia y
+  conserva su firma `CNN(n_classes=10)`, que usan los tests.
+- Se lanzan con `python scripts/sweep.py cnn` y se resumen con `python scripts/analyze.py cnn`. Son 18
+  ejecuciones, de las que 6 (las de A) se comparten con la pregunta 6, así que solo 12 son nuevas.
 - Métricas: accuracy final (media de las 5 últimas rondas) y estabilidad (desviación típica de
   `test_acc` en las 10 últimas), con media ± desviación entre semillas, y tiempo por ronda.
 - Criterio fijado de antemano: se mantiene A salvo que B o A + GroupNorm la superen en α=0,1 por más
