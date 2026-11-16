@@ -13,3 +13,4 @@ wheels/
 data/
 runs/
 .pytest_cache/
+.DS_Store

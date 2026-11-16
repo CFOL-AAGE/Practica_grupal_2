@@ -189,49 +189,6 @@ def dirichlet_shards(labels: np.ndarray, n_clients: int, classes_per_client: int
 
     return [np.concatenate(parts) for parts in chunks]
 
-# def dirichlet_shards(labels: np.ndarray, n_clients: int, classes_per_client: int, alpha: float, seed: int) -> Partition:
-#     """Reparto por clases: cada cliente tiene solo ``classes_per_client`` clases (k).
-
-#     1. Se asignan k clases distintas a cada cliente, de modo que todas las clases tengan dueño
-#        (hace falta ``n_clients * k >= n_clases``).
-#     2. Dentro de cada cliente, el peso de cada una de sus k clases sigue ``Dir(alpha)``.
-#     3. Los ejemplos de cada clase se reparten entre sus dueños en proporción a esos pesos.
-#     """
-#     # TODO: decide qué clases tiene cada cliente, muestrea sus pesos con rng.dirichlet y reparte
-#     #       cada clase entre sus dueños (split_by_proportions). Ningún ejemplo debe quedar fuera.
-#     clases = np.unique(labels)
-#     indexes = np.arange( len(labels) )
-
-#     # Tantos como k * n_clients.
-#     rng = np.random.default_rng(seed)
-#     slots = list(clases) # Se debe garantizar primero que todas las clases son cubiertas
-#     remaning_slots = n_clients * classes_per_client - len(clases)
-#     slots += list( rng.choice(clases, remaning_slots, replace=True) )
-#     rng.shuffle(slots)
-
-#     # Asignación
-#     map_class_clients = {c: [] for c in clases} # {class_1: [client_0, client_1]}
-#     cliente = 0
-#     for start in range(0, len(slots), classes_per_client):
-#         cls = slots[start: start + classes_per_client]
-#         for c in cls:
-#             map_class_clients[c].append(cliente)
-#         cliente += 1
-
-#     # Distribuir los ejemplos de las clases sobre los clientes
-#     partitions = [np.array([], dtype=int) for _ in range(n_clients)]
-
-#     for c in clases:
-#         clientes = map_class_clients[c]
-#         class_indexs = indexes[labels == c]
-#         props = rng.dirichlet([alpha for _ in range(len(clientes))])
-
-#         class_partitions = split_by_proportions(indices=class_indexs, proportions=props)
-#         for i, cl in enumerate(clientes):
-#             partitions[cl] = np.concatenate((partitions[cl], class_partitions[i]))
-
-#     return partitions
-
 
 def plot_partition(labels: np.ndarray, partition: Partition, path) -> None:
     """(DADO) Guarda un histograma apilado con el nº de ejemplos de cada clase por cliente."""
