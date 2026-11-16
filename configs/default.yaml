@@ -15,7 +15,7 @@ partition:
   classes_per_client: 2   # solo shards
 
 model:
-  name: mlp               # mlp | cnn
+  name: mlp               # mlp | cnn (cnn3x3 y cnn_gn: solo para comparar variantes de la CNN)
   hidden: 200             # solo mlp
 
 client:                   # lo que hace cada cliente en su entrenamiento local

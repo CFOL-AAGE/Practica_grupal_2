@@ -59,12 +59,53 @@ class CNN(nn.Sequential):
         )
 
 
+class CNN3x3(nn.Sequential):
+    """Variante de comparación de la CNN (decisiones/01): mismas capas con filtros 3x3. 50.186 parámetros."""
+
+    def __init__(self, n_classes: int = 10):
+        super().__init__(
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Flatten(),
+            nn.Linear(64 * 7 * 7, n_classes),
+        )
+
+
+class CNNGroupNorm(nn.Sequential):
+    """Variante de comparación de la CNN (decisiones/01): la CNN con GroupNorm tras cada convolución.
+
+    GroupNorm normaliza cada ejemplo por separado, sin estadísticas del mini-lote, así que no tiene
+    el problema de BatchNorm con datos no-IID (Hsieh et al., 2020). 8 grupos: 4 y 8 canales por
+    grupo. 83.658 parámetros (192 más que la CNN).
+    """
+
+    def __init__(self, n_classes: int = 10):
+        super().__init__(
+            nn.Conv2d(1, 32, kernel_size=5, padding=2),
+            nn.GroupNorm(8, 32),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Conv2d(32, 64, kernel_size=5, padding=2),
+            nn.GroupNorm(8, 64),
+            nn.ReLU(),
+            nn.MaxPool2d(2),
+            nn.Flatten(),
+            nn.Linear(64 * 7 * 7, n_classes),
+        )
+
+
 def build_model(cfg: Config) -> nn.Module:
     """Crea el modelo indicado en la sección ``model`` de la configuración."""
     if cfg.name == "mlp":
         return MLP(cfg.hidden)
-    if cfg.name == "cnn":
-        model = CNN()
+    # "cnn" es la CNN de la práctica; las otras dos solo se usan para compararla (decisiones/01).
+    cnns = {"cnn": CNN, "cnn3x3": CNN3x3, "cnn_gn": CNNGroupNorm}
+    if cfg.name in cnns:
+        model = cnns[cfg.name]()
         if (n := count_params(model)) > CNN_MAX_PARAMS:
             raise ValueError(f"La CNN tiene {n:,} parámetros; el límite es {CNN_MAX_PARAMS:,}")
         return model
