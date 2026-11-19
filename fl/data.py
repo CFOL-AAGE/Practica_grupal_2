@@ -154,8 +154,12 @@ def dirichlet_shards(labels: np.ndarray, n_clients: int, classes_per_client: int
     2. Dentro de cada cliente, el peso de cada una de sus k clases sigue ``Dir(alpha)``.
     3. Los ejemplos de cada clase se reparten entre sus dueños en proporción a esos pesos.
     """
+    indexes = np.arange(len(labels))
     classes = np.unique(labels)
-    n_classes, k = len(classes), classes_per_client
+    n_classes = len(classes)
+    k = classes_per_client
+
+    # Comprobar restricciones:
     if not 1 <= k <= n_classes:
         raise ValueError(f"classes_per_client debe estar entre 1 y {n_classes}, no {k}")
     if n_clients * k < n_classes:
@@ -163,31 +167,40 @@ def dirichlet_shards(labels: np.ndarray, n_clients: int, classes_per_client: int
             f"Con {n_clients} clientes y {k} clases por cliente no se cubren las {n_classes} clases "
             f"(hace falta n_clients * k >= {n_classes})"
         )
+    
     rng = np.random.default_rng(seed)
 
-    # 1. Clases de cada cliente: k posiciones consecutivas de una permutación recorrida en círculo.
-    #    Son distintas dentro de cada cliente (k <= n_clases), todas las clases tienen dueño
-    #    (n_clients * k >= n_clases) y cada clase tiene el mismo nº de dueños (±1).
-    perm = rng.permutation(classes)
-    client_classes = [perm[(i * k + np.arange(k)) % n_classes] for i in range(n_clients)]
+    # 1. Peso de cada una de sus k clases dentro de cada cliente: w_i ~ Dir(alpha, ..., alpha).
+    #    Ante un alpha muy pequeño pude provocar la presencia de nulos -> np.nan_to_num(...)
+    weights = np.nan_to_num(rng.dirichlet(np.full(k, alpha), size=n_clients)) # NaN a 0
+    weights[weights.sum(axis=1) == 0] = 1/k # Filas completamente nulas.
 
-    # 2. Peso de cada una de sus k clases dentro de cada cliente: w_i ~ Dir(alpha, ..., alpha).
-    weights = np.nan_to_num(rng.dirichlet(np.full(k, alpha), size=n_clients))
-    weights[weights.sum(axis=1) == 0] = 1.0 / k  # guarda: con alpha muy pequeño puede salir 0/0
+    # 2. Recorrido circular para mapeo de clases a clientes. Este enfoque permite asignar clases 
+    #    diferentes por cliente y se asegura que cada una de las clases tenga al menos un dueño.
+    perm = rng.permutation(classes)
+
+    # Mapping de clientes por clase, así como sus correspondientes proporciones de Dirichlet
+    map_class_clients = {c: ([], []) for c in classes}
+    for cliente in range(n_clients):
+        client_classes = perm[(cliente * k + np.arange(k)) % n_classes]
+        # Para cada clase del cliente se asigna el ID del cliente y su proporción de Dirichlet
+        for i, c in enumerate(client_classes):
+            map_class_clients[c][0].append(cliente)
+            map_class_clients[c][1].append(weights[cliente, i])
+
 
     # 3. Cada clase se reparte entre sus dueños en proporción a sus pesos para esa clase.
-    #    Cada cliente tiene al menos una clase con peso >= 1/k, así que nunca queda vacío.
-    chunks = [[] for _ in range(n_clients)]
-    for c in classes:
-        owners = [i for i in range(n_clients) if c in client_classes[i]]
-        w = np.array([weights[i][np.flatnonzero(client_classes[i] == c)[0]] for i in owners])
-        if w.sum() == 0:
-            w = np.ones(len(owners))
-        class_indices = rng.permutation(np.flatnonzero(labels == c))
-        for i, part in zip(owners, split_by_proportions(class_indices, w)):
-            chunks[i].append(part)
+    partitions = [np.array([], dtype=int) for _ in range(n_clients)]
 
-    return [np.concatenate(parts) for parts in chunks]
+    for c in classes:
+        clientes, pesos = map_class_clients[c] # ([client1, client2, ...], [w1, w2, ...])
+        class_indexs = indexes[labels == c]
+        class_partitions = split_by_proportions(class_indexs, pesos)
+        for i, split in enumerate(class_partitions):
+            id_cliente = clientes[i]
+            partitions[id_cliente] = np.concatenate((partitions[id_cliente], split))
+
+    return partitions
 
 
 def plot_partition(labels: np.ndarray, partition: Partition, path) -> None:
