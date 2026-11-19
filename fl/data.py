@@ -141,7 +141,7 @@ def dirichlet(labels: np.ndarray, n_clients: int, alpha: float, seed: int, min_s
                 partitions[i] = np.concatenate((partitions[i], split))
 
         # Revisar que ningún cliente quedé con menos de `min_size` elementos
-        repeat = any([len(p) < min_size for p in partitions])
+        repeat = min(map(len, partitions)) < min_size
 
     return partitions
 
