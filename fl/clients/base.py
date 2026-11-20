@@ -67,5 +67,41 @@ class Client:
           3. Devuelve un ``ClientUpdate`` con el ``state_dict`` final, ``self.n_samples`` y la
              pérdida media de entrenamiento en ``metrics["train_loss"]``.
         """
-        # TODO: escribe el bucle de entrenamiento (el README tiene una chuleta Keras -> PyTorch).
-        raise NotImplementedError("TODO: entrenamiento local")
+        pesos, metrics, perdidas = {}, {}, []
+
+        # Copiamos modelo general y def necesario
+        modelo_local = copy.deepcopy(global_model)
+        optimizador = torch.optim.SGD(modelo_local.parameters(), lr=self.lr)
+        lotes = DataLoader(dataset=self.dataset, batch_size=self.batch_size, shuffle=True)
+
+        # Entrenamos
+        modelo_local.train()
+        for epoch in range(self.local_epochs):
+
+            for x, y in lotes:
+
+                x, y = x.to(self.device), y.to(self.device)
+
+                # Entrenamos
+                optimizador.zero_grad()
+                perdida = self.loss(model=modelo_local, global_model=global_model, x=x, y=y)
+                perdida.backward()
+                optimizador.step()
+
+                # Guardamos la perdida
+                perdidas.append(perdida.item())
+
+        for nombre, tensor in modelo_local.state_dict().items():
+            pesos[nombre] = tensor.detach().clone()
+
+        if len(perdidas) > 0:
+            metrics["train_loss"] = sum(perdidas)/len(perdidas)
+        else:
+            metrics["train_loss"] = 0
+
+        return ClientUpdate(cid=self.cid, state_dict=pesos, n_samples=self.n_samples, metrics=metrics)
+
+
+
+
+
