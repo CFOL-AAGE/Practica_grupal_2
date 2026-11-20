@@ -28,7 +28,8 @@ server:                   # lo que decide el servidor en cada ronda
   rounds: 30
   fraction: 0.5           # fracción de clientes que participa en cada ronda (C)
   aggregator: fedavg      # nombre registrado en build_aggregator
-  codec: none             # nombre registrado en build_codec: none (sin compresión) | int8
+  codec: none             # nombre registrado en build_codec: none (sin compresión) | int8 | topk
+  topk_fraction: 0.1      # solo topk: fracción de componentes que sube cada cliente
 
 output:
   dir: runs

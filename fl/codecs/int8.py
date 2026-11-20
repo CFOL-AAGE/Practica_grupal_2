@@ -8,7 +8,7 @@ class int8CodeDecode(Codec):
     '''Funciones de encode y decode'''
 
     def encode(self, state:StateDict, reference:StateDict):
-        '''El cliente comprime pa enviar'''
+        '''El cliente comprime para enviar'''
 
         comprimido = {}
 
@@ -40,7 +40,7 @@ class int8CodeDecode(Codec):
 
 
     def decode(self, comprimido:StateDict, reference:StateDict):
-        '''El servidor tiene que descomprimir lo que comprimio el encode'''
+        '''El servidor tiene que descomprimir lo que comprimió el encode'''
 
         pesos = {}
 

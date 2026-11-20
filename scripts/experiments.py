@@ -29,6 +29,7 @@ LOCAL_ONLY = ["mode=local_only", "partition.type=dirichlet", "partition.alpha=0.
 
 E5 = ["client.local_epochs=5"]
 INT8 = ["server.codec=int8"]
+TOPK = ["server.codec=topk"]
 CNN = ["model.name=cnn"]
 MUS = ["0.01", "0.1", "1.0"]
 
@@ -84,5 +85,15 @@ EXPERIMENTS = {
         for data in [IID, DIR_01]
         for name in ["cnn", "cnn3x3", "cnn_gn"]
         for run in with_seeds(data + [f"model.name={name}"], SEEDS_3)
+    ],
+
+    # Extensión: top-k frente a int8 y sin comprimir. Las de float32 e int8 se comparten con Q5.
+    "topk": [run for data in [DIR_01, IID] for codec in [[], INT8, TOPK] for run in with_seeds(data + codec, SEEDS_5)],
+    # Extensión: más clientes, siempre con 5 participantes por ronda (C·K = 5), para que solo
+    # cambie cuántos datos tiene cada cliente y no cuánto se comunica por ronda.
+    "clientes": [
+        run
+        for n, c in [("10", "0.5"), ("50", "0.1"), ("100", "0.05")]
+        for run in with_seeds(DIR_01 + [f"partition.n_clients={n}", f"server.fraction={c}"], SEEDS_3)
     ],
 }

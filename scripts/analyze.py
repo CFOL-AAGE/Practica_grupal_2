@@ -48,9 +48,12 @@ LAYOUT = {
     "q5": ("Cuantización int8 de la subida", "data", "codec", True),
     "q6": ("CNN frente a MLP", "data", "model", False),
     "cnn": ("Variantes de la CNN", "data", "model", False),
+    "topk": ("Compresión de la subida: int8 frente a top-k", "data", "codec", True),
+    "clientes": ("Número de clientes (Dirichlet α=0,1, 5 por ronda)", None, "clients", False),
 }
 
 MODEL_NAMES = {"mlp": "MLP", "cnn": "CNN", "cnn3x3": "CNN 3×3", "cnn_gn": "CNN + GroupNorm"}
+CODEC_NAMES = {"none": "float32", "int8": "int8", "topk": "top-k"}
 
 LAST_FINAL, LAST_STABILITY = 5, 10
 
@@ -81,7 +84,9 @@ def describe(cfg):
         "fraction": f"C={num(cfg['server']['fraction'])}",
         "method": "FedAvg" if mu == 0 else f"FedProx μ={num(mu)}",
         "scenario": data + (f", E={c['local_epochs']}" if c["local_epochs"] != 1 else ""),
-        "codec": "int8" if cfg["server"]["codec"] == "int8" else "float32",
+                "codec": CODEC_NAMES.get(cfg["server"]["codec"], cfg["server"]["codec"])
+        + (f" ({num(cfg['server']['topk_fraction'] * 100)} %)" if cfg["server"]["codec"] == "topk" else ""),
+        "clients": f"K={p['n_clients']}, C={num(cfg['server']['fraction'])}",
         "model": MODEL_NAMES.get(cfg["model"]["name"], cfg["model"]["name"]),
     }
 
