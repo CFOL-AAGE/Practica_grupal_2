@@ -194,7 +194,7 @@ def dirichlet_shards(labels: np.ndarray, n_clients: int, classes_per_client: int
 
     for c in classes:
         clientes, pesos = map_class_clients[c] # ([client1, client2, ...], [w1, w2, ...])
-        class_indexs = indexes[labels == c]
+        class_indexs = rng.permutation(indexes[labels == c])
         class_partitions = split_by_proportions(class_indexs, pesos)
         for i, split in enumerate(class_partitions):
             id_cliente = clientes[i]

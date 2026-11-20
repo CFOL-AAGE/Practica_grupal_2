@@ -1,0 +1,17 @@
+# Configuración del reto (python reto.py). Como todas, parte de configs/default.yaml y solo indica
+# lo que cambia. Es la que se usa al evaluar el envío.
+#
+# El escenario (100 clientes, 20 rondas, 10 elegidos por ronda, el reparto y los abandonos) lo fija
+# reto.py: partition.*, server.rounds y server.fraction se ignoran.
+
+model:
+  name: linear            # lo interpreta fl/reto_models.py
+
+client:
+  local_epochs: 2
+  batch_size: 64
+  lr: 0.05
+
+server:
+  aggregator: fedavg
+  codec: none
